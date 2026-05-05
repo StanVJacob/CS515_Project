@@ -103,4 +103,4 @@ Used on the backend to translate the received text.
 
 Documentation: https://deep-translator.readthedocs.io/en/latest/
 
-![Deep Translator installation and quick start](docs/deep-translator-usage.png)
+
