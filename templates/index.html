@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Real-Time Translator</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <main class="container">
+    <h1>Real-Time Translator</h1>
+    <p class="hint">
+      Speak English into your microphone. The app will transcribe what you say
+      and translate it live.
+    </p>
+
+    <!-- Shown only when the browser lacks Web Speech API support. -->
+    <div id="unsupported" class="error" hidden>
+      This app requires Chrome or Edge (Web Speech API is not available in
+      your current browser).
+    </div>
+
+    <div class="controls">
+      <button id="start-btn">Start</button>
+      <button id="stop-btn" disabled>Stop</button>
+    </div>
+
+    <section>
+      <h2>English (recognized)</h2>
+      <div id="original" class="output"></div>
+    </section>
+
+    <section>
+      <h2>Chinese Translation</h2>
+      <div id="translation" class="output"></div>
+    </section>
+  </main>
+
+  <script>
+    // --- Feature detection ---------------------------------------------------
+    // Web Speech API is exposed as `webkitSpeechRecognition` in Chrome/Edge.
+    const SpeechRecognition =
+      window.SpeechRecognition || window.webkitSpeechRecognition;
+
+    if (!SpeechRecognition) {
+      document.getElementById("unsupported").hidden = false;
+      document.getElementById("start-btn").disabled = true;
+    }
+
+    // --- DOM handles ---------------------------------------------------------
+    const startBtn    = document.getElementById("start-btn");
+    const stopBtn     = document.getElementById("stop-btn");
+    const originalEl  = document.getElementById("original");
+    const translateEl = document.getElementById("translation");
+
+    // --- Speech recognition setup -------------------------------------------
+    let recognition = null;
+    if (SpeechRecognition) {
+      recognition = new SpeechRecognition();
+      recognition.lang = "en-US";      // always recognize English
+      recognition.continuous = true;    // keep listening across pauses
+      recognition.interimResults = true; // stream partial transcripts
+
+      // Each fired event may contain both interim (still changing) and final
+      // (locked in) results. We render interim text in grey italic, and when a
+      // segment goes final we ship it off to the backend to translate.
+      recognition.onresult = (event) => {
+        let interim = "";
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const result = event.results[i];
+          const transcript = result[0].transcript;
+          if (result.isFinal) {
+            appendFinalOriginal(transcript);
+            requestTranslation(transcript);
+          } else {
+            interim += transcript;
+          }
+        }
+        renderInterim(interim);
+      };
+
+      recognition.onerror = (event) => {
+        console.error("Speech recognition error:", event.error);
+      };
+
+      recognition.onend = () => {
+        // Auto-restart if the user hasn't explicitly stopped; Chrome cuts the
+        // session after ~1 minute of silence even with continuous=true.
+        if (!manuallyStopped) {
+          try { recognition.start(); } catch (_) { /* already started */ }
+        }
+      };
+    }
+
+    // --- UI helpers ----------------------------------------------------------
+    let manuallyStopped = true;
+
+    // Interim text lives at the bottom of #original in a grey italic span. It
+    // gets replaced each time new interim results arrive.
+    function renderInterim(text) {
+      let span = document.getElementById("interim-span");
+      if (!span) {
+        span = document.createElement("span");
+        span.id = "interim-span";
+        span.className = "interim";
+        originalEl.appendChild(span);
+      }
+      span.textContent = " " + text;
+    }
+
+    function appendFinalOriginal(text) {
+      // Drop the interim span before committing a final line.
+      const span = document.getElementById("interim-span");
+      if (span) span.remove();
+
+      const p = document.createElement("p");
+      p.textContent = text.trim();
+      originalEl.appendChild(p);
+    }
+
+    function appendTranslation(text) {
+      const p = document.createElement("p");
+      p.textContent = text;
+      translateEl.appendChild(p);
+    }
+
+    // --- Backend call --------------------------------------------------------
+    function requestTranslation(text) {
+      fetch("/translate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      })
+        .then((r) => r.json())
+        .then((data) => {
+          if (data.error) {
+            appendTranslation("[error: " + data.error + "]");
+          } else {
+            appendTranslation(data.translation);
+          }
+        })
+        .catch((err) => {
+          appendTranslation("[network error: " + err.message + "]");
+        });
+    }
+
+    // --- Button wiring -------------------------------------------------------
+    startBtn.addEventListener("click", () => {
+      if (!recognition) return;
+      manuallyStopped = false;
+      recognition.start();
+      startBtn.disabled = true;
+      stopBtn.disabled = false;
+    });
+
+    stopBtn.addEventListener("click", () => {
+      if (!recognition) return;
+      manuallyStopped = true;
+      recognition.stop();
+      startBtn.disabled = false;
+      stopBtn.disabled = true;
+    });
+  </script>
+</body>
+</html>
