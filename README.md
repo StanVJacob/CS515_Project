@@ -90,6 +90,36 @@ Re-activate it next time with `source venv/bin/activate` (macOS/Linux) or `venv\
 2. **Text sent to backend**
 3. **Backend translates** the received text into the targeted language
 
+## Learning Outcomes Covered
+
+### Organize data, code, and functionality by creating and extending object classes
+
+The backend logic in `hw7.py` is organized into classes with clear
+responsibilities:
+
+- `LanguageManager` stores supported languages and validates language codes.
+- `TranslationService` translates cleaned transcript text.
+- `ChineseTranslationService` and `SpanishTranslationService` extend
+  `TranslationService` for language-specific behavior.
+- `SubtitleProcessor` coordinates language validation and translation.
+
+The project also uses inheritance through `BaseTranslationService` and
+`BaseSubtitleProcessor`, which define shared interfaces for the concrete
+classes.
+
+### Validate correct program behavior by writing unit tests
+
+`test_hw7.py` contains unit tests for backend behavior, including:
+
+- `translate_text()` returning expected translated output when given a known
+  input.
+- `validate_language()` accepting supported language codes and rejecting
+  unsupported values.
+- subtitle processing, input cleaning, and supported-language lookup.
+
+The translation tests use a fake translator so they can run reliably without a
+network call.
+
 ## Tools
 
 
