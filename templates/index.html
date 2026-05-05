@@ -162,41 +162,66 @@
         });
     }
 
-    // Debounced interim translation. Each new interim update resets a 400ms
-    // timer; only the latest snapshot is sent. A sequence number ensures
-    // out-of-order responses (older request returning after a newer one) get
-    // dropped instead of overwriting fresher previews.
-    let interimTranslationTimer = null;
+    // Throttled interim translation. Guarantees at least one translation
+    // request every INTERIM_THROTTLE_MS even during continuous speech (where
+    // a pure debounce would never fire because each new interim event keeps
+    // resetting the timer). Leading-edge: fire immediately on first update.
+    // Trailing-edge: after the throttle window, fire once more with the
+    // latest pending text so we don't miss the most recent snapshot.
+    // A sequence number drops out-of-order responses.
+    const INTERIM_THROTTLE_MS = 600;
+    let interimTranslationLastFired = 0;
+    let interimTranslationPending = null;
+    let interimTranslationTrailingTimer = null;
     let interimTranslationSeq = 0;
 
     function scheduleInterimTranslation(text) {
-      clearTimeout(interimTranslationTimer);
       const trimmed = text.trim();
       if (!trimmed) {
         renderInterimTranslation("");
+        interimTranslationPending = null;
+        clearTimeout(interimTranslationTrailingTimer);
         return;
       }
-      interimTranslationTimer = setTimeout(() => {
-        const seq = ++interimTranslationSeq;
-        fetch("/translate", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text: trimmed }),
+      interimTranslationPending = trimmed;
+
+      const elapsed = Date.now() - interimTranslationLastFired;
+      if (elapsed >= INTERIM_THROTTLE_MS) {
+        fireInterimTranslation();
+      } else {
+        clearTimeout(interimTranslationTrailingTimer);
+        interimTranslationTrailingTimer = setTimeout(
+          fireInterimTranslation,
+          INTERIM_THROTTLE_MS - elapsed
+        );
+      }
+    }
+
+    function fireInterimTranslation() {
+      if (!interimTranslationPending) return;
+      const text = interimTranslationPending;
+      interimTranslationPending = null;
+      interimTranslationLastFired = Date.now();
+
+      const seq = ++interimTranslationSeq;
+      fetch("/translate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      })
+        .then((r) => r.json())
+        .then((data) => {
+          if (seq !== interimTranslationSeq) return; // stale, drop it
+          if (data.error) {
+            renderInterimTranslation("[" + data.error + "]");
+          } else {
+            renderInterimTranslation(data.translation || "");
+          }
         })
-          .then((r) => r.json())
-          .then((data) => {
-            if (seq !== interimTranslationSeq) return; // stale, drop it
-            if (data.error) {
-              renderInterimTranslation("[" + data.error + "]");
-            } else {
-              renderInterimTranslation(data.translation || "");
-            }
-          })
-          .catch(() => {
-            // Silently swallow interim errors; the final translation will
-            // still be attempted via requestTranslation when isFinal lands.
-          });
-      }, 400);
+        .catch(() => {
+          // Silently swallow interim errors; the final translation will
+          // still be attempted via requestTranslation when isFinal lands.
+        });
     }
 
     // --- Button wiring -------------------------------------------------------
