@@ -1,8 +1,10 @@
 
 from flask import Flask, render_template, request, jsonify
-from deep_translator import GoogleTranslator
+
+from hw7 import SubtitleProcessor
 
 app = Flask(__name__)
+subtitle_processor = SubtitleProcessor()
 
 
 @app.route("/")
@@ -16,10 +18,10 @@ def index():
 
 def translate():
     """
-    Translate an English string into Simplified Chinese.
+    Translate an English string into the requested target language.
 
     Request JSON:
-        {"text": "<english text>"}
+        {"text": "<english text>", "target_language": "zh-CN"}
     Response JSON:
         {"translation": "<translated text>"}
 
@@ -27,13 +29,16 @@ def translate():
     silence coming out of the speech recognizer.
     """
     data = request.get_json(silent=True) or {}
-    text = (data.get("text") or "").strip()
+    text = data.get("text") or ""
+    target_language = data.get("target_language") or "zh-CN"
 
-    if not text:
+    if not subtitle_processor.translation_service.clean_input(text):
         return jsonify({"translation": ""})
 
     try:
-        translated = GoogleTranslator(source="en", target="zh-CN").translate(text)
+        translated = subtitle_processor.process_subtitle(text, target_language)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
     except Exception as exc:
         # Return the error message so the browser can show it inline.
         return jsonify({"error": str(exc)}), 500

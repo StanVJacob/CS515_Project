@@ -1,202 +1,152 @@
 """
-Project Idea: Real-Time Translator for Boardway shows(Chinese & Spanish supported)
+Backend domain logic for the real-time translator app.
 
-Architecture planed out:
-    - Speech-to-text runs in the browser (Web Speech API). The server
-      never touches audio.
-    - Core Functions:
-         1. Validating the requested target language
-         2. Cleaning the incoming transcript (trim whitespace, etc.)
-         3. Translating English text into the target language
-    - The Flask route in app.py calls these functions.
-
-
-Tech Stack Overview:
-Goal: Real time translation.
-Workflow: (three steps)
-1:From voice to text(Front end) → 
-2:Text send to backend → 
-3:Backend function translate the received text into targeted language.
-
-Tools for each step:
-1:Web Speech API (Free) Documentation:[https://developer.mozilla.org/en-US/docs/Web/API/Web_Speech_API]
-
-3: Deep Translator(Free Open sourced)
-Documentation:[https://deep-translator.readthedocs.io/en/latest/]
-
-
-
+The Flask route should stay thin: it receives JSON and returns JSON. This
+module owns input cleanup, language validation, and translation service objects.
 """
+
+from abc import ABC, abstractmethod
 
 
 SUPPORTED_LANGUAGES = ["zh-CN", "es"]
 
 
-# 1. clean_input
+class LanguageManager:
+    """Stores and validates the target languages supported by the app."""
+
+    def __init__(self, supported_languages=None):
+        self.supported_languages = list(supported_languages or SUPPORTED_LANGUAGES)
+
+    def get_supported_languages(self):
+        return list(self.supported_languages)
+
+    def normalize_language(self, code):
+        if not isinstance(code, str):
+            return ""
+
+        cleaned_code = code.strip()
+        for supported_code in self.supported_languages:
+            if supported_code.lower() == cleaned_code.lower():
+                return supported_code
+        return cleaned_code
+
+    def validate_language(self, code):
+        normalized_code = self.normalize_language(code)
+        return normalized_code in self.supported_languages
+
+
+class BaseTranslationService(ABC):
+    """Base class for translation services."""
+
+    def clean_input(self, text):
+        if not isinstance(text, str):
+            return ""
+        return text.strip()
+
+    @abstractmethod
+    def translate_text(self, text, target_language):
+        """Translate text into the requested target language."""
+
+
+class TranslationService(BaseTranslationService):
+    """Google Translator implementation used by the app."""
+
+    def __init__(self, source_language="en", translator_factory=None):
+        self.source_language = source_language
+        self.translator_factory = translator_factory
+
+    def _create_translator(self, target_language):
+        if self.translator_factory:
+            return self.translator_factory(
+                source=self.source_language,
+                target=target_language,
+            )
+
+        from deep_translator import GoogleTranslator
+
+        return GoogleTranslator(source=self.source_language, target=target_language)
+
+    def translate_text(self, text, target_language):
+        cleaned_text = self.clean_input(text)
+        if not cleaned_text:
+            return ""
+
+        translator = self._create_translator(target_language)
+        return translator.translate(cleaned_text) or ""
+
+
+class ChineseTranslationService(TranslationService):
+    """Specialized translation service for Simplified Chinese."""
+
+    target_language = "zh-CN"
+
+    def translate(self, text):
+        return self.translate_text(text, self.target_language)
+
+
+class SpanishTranslationService(TranslationService):
+    """Specialized translation service for Spanish."""
+
+    target_language = "es"
+
+    def translate(self, text):
+        return self.translate_text(text, self.target_language)
+
+
+class BaseSubtitleProcessor(ABC):
+    """Base class for processing transcript text into subtitles."""
+
+    @abstractmethod
+    def process_subtitle(self, text, target_language="zh-CN"):
+        """Return translated subtitle text."""
+
+
+class SubtitleProcessor(BaseSubtitleProcessor):
+    """Coordinates input cleanup, language validation, and translation."""
+
+    def __init__(self, language_manager=None, translation_service=None):
+        self.language_manager = language_manager or LanguageManager()
+        self.translation_service = translation_service or TranslationService()
+
+    def process_subtitle(self, text, target_language="zh-CN"):
+        normalized_language = self.language_manager.normalize_language(target_language)
+        if not self.language_manager.validate_language(normalized_language):
+            raise ValueError(f"Unsupported language: {target_language}")
+
+        return self.translation_service.translate_text(text, normalized_language)
+
+
+default_language_manager = LanguageManager()
+default_translation_service = TranslationService()
+default_subtitle_processor = SubtitleProcessor(
+    language_manager=default_language_manager,
+    translation_service=default_translation_service,
+)
+
 
 def clean_input(text):
-    """
-    What it does:
-        Normalizes raw transcript text coming from the browser so it is
-        safe to hand to the translation API. Strips leading/trailing
-        whitespace. Returns an empty string if `text` is None or not a
-        string.
+    return default_translation_service.clean_input(text)
 
-    How to test:
-        Call clean_input with different inputs and compare the returned
-        string to the expected cleaned output.
-
-    Input / Output examples:
-        Actual:          clean_input("  Hello  ")
-        Expected output: "Hello"
-
-        Actual:          clean_input("")
-        Expected output: ""
-
-        Actual:          clean_input(None)
-        Expected output: ""
-
-        Actual:          clean_input("   ") 
-        Expected output: ""
-
-    """
-    pass
-
-
-
-# 2. is_supported_language
 
 def is_supported_language(code):
-    """
-    What it does:
-        Returns True if `code` is a language code our app can translate
-        INTO (currently Simplified Chinese "zh-CN" and Spanish "es").
-        Returns False otherwise. !!Case-insensitive so both
-        "ZH-CN" and "zh-cn" are accepted.
-
-    How to test:
-        Call is_supported_language with both known and unknown codes
-        (including different cases) and assert the expected boolean.
-
-    Input / Output examples:
-        Actual:          is_supported_language("zh-CN")
-        Expected output: True
-
-        Actual:          is_supported_language("es")
-        Expected output: True
-
-        Actual:          is_supported_language("ZH-CN")    # uppercase
-        Expected output: True
-
-        Actual:          is_supported_language("ja")       # Japanese
-        Expected output: False
-
-        Actual:          is_supported_language("")
-        Expected output: False
-
-    Edge cases:
-        - Mixed-case codes              -> normalized before compare
-        - Empty string                  -> False, not an error
-        - None                          -> False, not an error
-    """
-    pass
+    return default_language_manager.validate_language(code)
 
 
-# 3. translate_to_chinese
+def validate_language(code):
+    return default_language_manager.validate_language(code)
+
+
+def translate_text(text, target_language="zh-CN"):
+    return default_subtitle_processor.process_subtitle(text, target_language)
 
 
 def translate_to_chinese(text):
-    """
-    What it does:
-        Translates an English string into Simplified Chinese by
-        delegating to deep_translator.GoogleTranslator with
-        source="en", target="zh-CN". Short-circuits on empty input so
-        we never send a request for silence.
-
-    How to test:
-        Pass in a short English phrase and compare the Chinese output
-        to a known expected translation. Because real translation APIs
-        can drift, tests should accept any reasonable translation
-        (e.g. "Hello" -> "你好").
-
-    Input / Output examples:
-        Actual:          translate_to_chinese("Hello")
-        Expected output: "你好"
-
-        Actual:          translate_to_chinese("Good morning")
-        Expected output: "早上好"
-
-        Actual:          translate_to_chinese("")
-        Expected output: ""      (short-circuit, no API call)
-
-        Actual:          translate_to_chinese("   ")
-        Expected output: ""      (empty after cleaning)
-
-    Edge cases:
-        - Empty  input  -> return "" without calling API
-    """
-    pass
-
-
-
-# 4. translate_to_spanish
+    return translate_text(text, "zh-CN")
 
 
 def translate_to_spanish(text):
-    """
-    What it does:
-        Translates an English string into Spanish via
-        deep_translator.GoogleTranslator with source="en", target="es".
-        Mirrors translate_to_chinese in behavior and edge-case handling.
+    return translate_text(text, "es")
 
-    How to test:
-        Same shape as translate_to_chinese: feed in an English phrase,
-        assert the Spanish output matches an expected translation.
-
-    Input / Output examples:
-        Actual:          translate_to_spanish("Hello")
-        Expected output: "Hola"
-
-        Actual:          translate_to_spanish("Good night")
-        Expected output: "Buenas noches"
-
-        Actual:          translate_to_spanish("")
-        Expected output: ""
-
-        Actual:          translate_to_spanish("   ")
-        Expected output: ""
-
-    Edge cases:
-        - Empty / whitespace-only input  -> return "" without calling API
-        - Network error                  -> propagate
-    """
-    pass
-
-
-# 5. get_supported_languages
 
 def get_supported_languages():
-    """
-    What it does:
-        Returns the list of language codes our app supports as target
-        languages. 
-
-    How to test:
-        Call get_supported_languages() and assert the result contains
-        every code we support
-
-    Input / Output examples:
-        Actual:          get_supported_languages()
-        Expected output: ["zh-CN", "es"]
-
-        Actual:          "zh-CN" in get_supported_languages()
-        Expected output: True
-
-        Actual:          "ja" in get_supported_languages()
-        Expected output: False
-
-    Edge cases:
-        - Returns a list, not a set or tuple (tests may compare order)
-        - Never returns None, always a list (possibly empty)
-    """
-    pass
+    return default_language_manager.get_supported_languages()
