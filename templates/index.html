@@ -76,6 +76,7 @@
           }
         }
         renderInterim(interim);
+        scheduleInterimTranslation(interim);
       };
 
       recognition.onerror = (event) => {
@@ -118,9 +119,27 @@
     }
 
     function appendTranslation(text) {
+      // Drop any interim translation preview before committing a final line.
+      const span = document.getElementById("interim-translation-span");
+      if (span) span.remove();
+
       const p = document.createElement("p");
       p.textContent = text;
       translateEl.appendChild(p);
+    }
+
+    // Live interim translation lives at the bottom of #translation in a grey
+    // italic span. It gets replaced each time new interim results arrive, and
+    // is removed when a final translation lands on top of it.
+    function renderInterimTranslation(text) {
+      let span = document.getElementById("interim-translation-span");
+      if (!span) {
+        span = document.createElement("span");
+        span.id = "interim-translation-span";
+        span.className = "interim";
+        translateEl.appendChild(span);
+      }
+      span.textContent = " " + text;
     }
 
     // --- Backend call --------------------------------------------------------
@@ -141,6 +160,43 @@
         .catch((err) => {
           appendTranslation("[network error: " + err.message + "]");
         });
+    }
+
+    // Debounced interim translation. Each new interim update resets a 400ms
+    // timer; only the latest snapshot is sent. A sequence number ensures
+    // out-of-order responses (older request returning after a newer one) get
+    // dropped instead of overwriting fresher previews.
+    let interimTranslationTimer = null;
+    let interimTranslationSeq = 0;
+
+    function scheduleInterimTranslation(text) {
+      clearTimeout(interimTranslationTimer);
+      const trimmed = text.trim();
+      if (!trimmed) {
+        renderInterimTranslation("");
+        return;
+      }
+      interimTranslationTimer = setTimeout(() => {
+        const seq = ++interimTranslationSeq;
+        fetch("/translate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: trimmed }),
+        })
+          .then((r) => r.json())
+          .then((data) => {
+            if (seq !== interimTranslationSeq) return; // stale, drop it
+            if (data.error) {
+              renderInterimTranslation("[" + data.error + "]");
+            } else {
+              renderInterimTranslation(data.translation || "");
+            }
+          })
+          .catch(() => {
+            // Silently swallow interim errors; the final translation will
+            // still be attempted via requestTranslation when isFinal lands.
+          });
+      }, 400);
     }
 
     // --- Button wiring -------------------------------------------------------
