@@ -2,15 +2,15 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>Real-Time Translator</title>
+  <title>Real-Time Play Translation</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <link href="https://fonts.googleapis.com/css2?family=Limelight&display=swap" rel="stylesheet">
 </head>
 <body>
   <main class="container">
-    <h1>Real-Time Translator</h1>
+    <h1>Real-Time Play Translation</h1>
     <p class="hint">
-      Speak English into your microphone. The app will transcribe what you say
-      and translate it live.
+      Speak English into the microphone. The app will translate what you say live.
     </p>
 
     <!-- Shown only when the browser lacks Web Speech API support. -->
@@ -106,26 +106,44 @@
         originalEl.appendChild(span);
       }
       span.textContent = " " + text;
+
+      originalEl.scrollTop = originalEl.scrollHeight;
     }
 
     function appendFinalOriginal(text) {
-      // Drop the interim span before committing a final line.
       const span = document.getElementById("interim-span");
       if (span) span.remove();
 
+      // make previous lines gray
+      const prev = originalEl.querySelectorAll("p");
+      prev.forEach(p => p.classList.remove("latest"));
+
       const p = document.createElement("p");
       p.textContent = text.trim();
+      p.classList.add("latest");  // NEW LINE
+
       originalEl.appendChild(p);
+
+      // auto scroll
+      originalEl.scrollTop = originalEl.scrollHeight;
     }
 
     function appendTranslation(text) {
-      // Drop any interim translation preview before committing a final line.
       const span = document.getElementById("interim-translation-span");
       if (span) span.remove();
 
+      // make previous lines gray
+      const prev = translateEl.querySelectorAll("p");
+      prev.forEach(p => p.classList.remove("latest"));
+
       const p = document.createElement("p");
       p.textContent = text;
+      p.classList.add("latest");
+
       translateEl.appendChild(p);
+
+      // auto scroll
+      translateEl.scrollTop = translateEl.scrollHeight;
     }
 
     // Live interim translation lives at the bottom of #translation in a grey
@@ -140,6 +158,8 @@
         translateEl.appendChild(span);
       }
       span.textContent = " " + text;
+
+      translateEl.scrollTop = translateEl.scrollHeight;
     }
 
     // --- Backend call --------------------------------------------------------
