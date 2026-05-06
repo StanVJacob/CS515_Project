@@ -124,7 +124,13 @@ Re-activate it next time with `source venv/bin/activate` (macOS/Linux) or `venv\
 
 ---
 
+## Screenshots
 
+![Screenshot 1](ScreenShot/1.jpg)
+
+![Screenshot 2](ScreenShot/WechatIMG1338.jpg)
+
+---
 
 ## Developers
 
